@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Gate — Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #388bfd;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --radius: 8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 56px;
+    }
+    header .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    header .logo svg { flex-shrink: 0; }
+    header .badge {
+      background: #1c2c3a;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    header .spacer { flex: 1; }
+    header .project-name {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .card-body { padding: 16px; }
+
+    /* ── Sidebar ──────────────────────────────────────────────────────── */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Status row */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .phase-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .phase-idle     { background:#1c2230; color:#8b949e; }
+    .phase-analyzing{ background:#1c2c3a; color:var(--accent); }
+    .phase-fixing   { background:#201c2c; color:var(--purple); }
+    .phase-testing  { background:#1c2a1c; color:var(--green); }
+    .phase-done     { background:#1c2a1c; color:var(--green); }
+
+    .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
+
+    /* Progress bar */
+    .progress-wrap {
+      margin: 8px 0 14px;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .progress-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+      transition: width .4s ease;
+    }
+    .progress-fill.done { background: var(--green); }
+
+    /* Meta item */
+    .meta-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 3px 0;
+    }
+    .meta-item span:last-child { color: var(--text); font-weight: 500; }
+
+    /* Workflow steps */
+    .workflow { display: flex; flex-direction: column; gap: 0; }
+    .wf-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 6px 0;
+      position: relative;
+    }
+    .wf-step:not(:last-child)::after {
+      content:'';
+      position: absolute;
+      left: 11px;
+      top: 28px;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+    .wf-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 700;
+      z-index: 1;
+    }
+    .wf-icon.active  { border-color: var(--accent); color: var(--accent); }
+    .wf-icon.done    { border-color: var(--green);  color: var(--green);  }
+    .wf-label { font-size: 13px; padding-top: 2px; }
+    .wf-label small { display:block; font-size:11px; color:var(--muted); }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity .15s, transform .1s;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    .btn:last-child { margin-bottom: 0; }
+    .btn:hover  { opacity: .85; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    .btn-primary  { background: var(--accent);  color: #fff; }
+    .btn-purple   { background: #6e40c9;        color: #fff; }
+    .btn-green    { background: #238636;        color: #fff; }
+    .btn-teal     { background: #1b6b5a;        color: #fff; }
+    .btn-outline  {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Main content ─────────────────────────────────────────────────── */
+    .main { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Findings panels */
+    .findings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 900px) {
+      .findings-grid { grid-template-columns: 1fr; }
+    }
+
+    .finding-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      margin-bottom: 8px;
+    }
+    .finding-item:last-child { margin-bottom: 0; }
+    .finding-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .sev {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .sev-high   { background:#2e1b1b; color:var(--red);    border:1px solid #5c2020; }
+    .sev-medium { background:#2c2310; color:var(--yellow);  border:1px solid #5c4510; }
+    .sev-low    { background:#1c2c1c; color:var(--green);  border:1px solid #1a4a1a; }
+    .sev-info   { background:#1c1c2c; color:var(--purple); border:1px solid #2e2a4a; }
+
+    .finding-id { font-size: 11px; font-weight: 700; color: var(--muted); }
+    .finding-title { font-size: 13px; font-weight: 600; }
+    .finding-detail { font-size: 12px; color: var(--muted); }
+    .finding-file { font-size: 11px; color: var(--accent); margin-top: 4px; }
+    .finding-fixed {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+      background: #1c2a1c;
+      border: 1px solid #1a4a1a;
+      border-radius: 999px;
+      padding: 1px 7px;
+      margin-left: 4px;
+    }
+
+    .empty-state {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 24px 0;
+    }
+
+    /* Verification strip */
+    .verification-strip {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .ver-not_run { background: #1a1a1a; border: 1px solid var(--border); color: var(--muted); }
+    .ver-passed  { background: #122112; border: 1px solid #1a4a1a; color: var(--green); }
+    .ver-failed  { background: #210d0d; border: 1px solid #5c2020; color: var(--red); }
+
+    /* Report panel */
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .report-stat {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      text-align: center;
+    }
+    .report-stat .value { font-size: 28px; font-weight: 700; }
+    .report-stat .label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .report-stat .value.red    { color: var(--red); }
+    .report-stat .value.yellow { color: var(--yellow); }
+    .report-stat .value.green  { color: var(--green); }
+    .report-stat .value.purple { color: var(--purple); }
+
+    .report-summary {
+      padding: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1c2230;
+      border: 1px solid var(--accent);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity .3s;
+      z-index: 999;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#388bfd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    SecureGate
+  </a>
+  <span class="badge">Security Gate</span>
+  <span class="spacer"></span>
+  <span class="project-name" id="projectName">—</span>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Project Status card -->
+    <div class="card">
+      <div class="card-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Project Status
+      </div>
+      <div class="card-body">
+        <div class="status-row">
+          <span id="phaseBadge" class="phase-badge phase-idle"><span class="dot"></span> idle</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-label">
+            <span>Pipeline progress</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="meta-item"><span>Last run</span><span id="lastRun">—</span></div>
+        <div class="meta-item"><span>Verification</span><span id="verMeta">—</span></div>
+      </div>
+    </div>
+
+    <!-- Actions card -->
+    <div class="card">
+      <div class="card-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Actions
+      </div>
+      <div class="card-body">
+        <button class="btn btn-primary" id="btnAnalyze" onclick="doAnalyze()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Analyze Project
+        </button>
+        <button class="btn btn-purple" id="btnFix" onclick="doFix()" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Fix Issues
+        </button>
+        <button class="btn btn-green" id="btnTest" onclick="doTest()" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Run Tests
+        </button>
+        <button class="btn btn-teal" id="btnReport" onclick="doReport()" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Final Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Workflow card -->
+    <div class="card">
+      <div class="card-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Workflow
+      </div>
+      <div class="card-body">
+        <div class="workflow" id="workflowSteps">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Findings -->
+    <div class="findings-grid">
+
+      <div class="card" id="secCard">
+        <div class="card-header" style="color:#f85149">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Security
+          <span id="secCount" style="margin-left:auto;color:var(--text);font-size:12px"></span>
+        </div>
+        <div class="card-body" id="secBody">
+          <div class="empty-state">Run analysis to detect findings</div>
+        </div>
+      </div>
+
+      <div class="card" id="testCard">
+        <div class="card-header" style="color:var(--yellow)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Testing
+          <span id="testCount" style="margin-left:auto;color:var(--text);font-size:12px"></span>
+        </div>
+        <div class="card-body" id="testBody">
+          <div class="empty-state">Run analysis to detect findings</div>
+        </div>
+      </div>
+
+      <div class="card" id="qualCard">
+        <div class="card-header" style="color:var(--purple)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          Quality
+          <span id="qualCount" style="margin-left:auto;color:var(--text);font-size:12px"></span>
+        </div>
+        <div class="card-body" id="qualBody">
+          <div class="empty-state">Run analysis to detect findings</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Verification status -->
+    <div id="verStrip" class="verification-strip ver-not_run">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Verification: not run — click "Run Tests" after fixing issues
+    </div>
+
+    <!-- Report panel -->
+    <div class="card" id="reportCard" style="display:none">
+      <div class="card-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Final Report
+        <span id="reportTime" style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:400"></span>
+      </div>
+      <div class="card-body">
+        <div class="report-grid" id="reportGrid"></div>
+        <div class="report-summary" id="reportSummary"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ── Workflow steps definition ──────────────────────────────────────────
+  const STEPS = [
+    { id:'project',   label:'Project',            sub:'SecureGate Demo' },
+    { id:'gate',      label:'Bob Security Gate',  sub:'Entry point' },
+    { id:'main',      label:'Main Bob Agent',      sub:'Orchestrator' },
+    { id:'subagents', label:'Subagents',           sub:'Security · Testing · Quality' },
+    { id:'findings',  label:'Findings',            sub:'Collected from all subagents' },
+    { id:'fix',       label:'Fix + Verify',        sub:'Patch & re-test' },
+    { id:'report',    label:'Final Report',        sub:'Summary & sign-off' },
+  ];
+
+  const PHASE_STEP = {
+    idle: -1, analyzing: 3, fixing: 5, testing: 5, done: 6,
+  };
+
+  function renderWorkflow(phase) {
+    const activeIdx = PHASE_STEP[phase] ?? -1;
+    const html = STEPS.map((s, i) => {
+      const cls = i < activeIdx ? 'done' : i === activeIdx ? 'active' : '';
+      const icon = i < activeIdx ? '✓' : i + 1;
+      return `<div class="wf-step">
+        <div class="wf-icon ${cls}">${icon}</div>
+        <div class="wf-label">${s.label}<small>${s.sub}</small></div>
+      </div>`;
+    }).join('');
+    document.getElementById('workflowSteps').innerHTML = html;
+  }
+
+  // ── Render findings ────────────────────────────────────────────────────
+  function renderFindings(items, bodyId, countId) {
+    const body = document.getElementById(bodyId);
+    const cnt  = document.getElementById(countId);
+    if (!items || items.length === 0) {
+      body.innerHTML = '<div class="empty-state">No findings</div>';
+      cnt.textContent = '';
+      return;
+    }
+    cnt.textContent = `${items.length} finding${items.length !== 1 ? 's' : ''}`;
+    body.innerHTML = items.map(f => `
+      <div class="finding-item">
+        <div class="finding-top">
+          <span class="sev sev-${f.severity}">${f.severity}</span>
+          <span class="finding-id">${f.id}</span>
+          ${f.fixed ? '<span class="finding-fixed">✓ fixed</span>' : ''}
+        </div>
+        <div class="finding-title">${f.title}</div>
+        <div class="finding-detail">${f.detail}</div>
+        <div class="finding-file">${f.file}${f.line ? ':' + f.line : ''}</div>
+      </div>`).join('');
+  }
+
+  // ── Verification strip ─────────────────────────────────────────────────
+  function renderVerification(status) {
+    const strip = document.getElementById('verStrip');
+    strip.className = `verification-strip ver-${status}`;
+    const msgs = {
+      not_run: '⏸  Verification: not run — click "Run Tests" after fixing issues',
+      passed:  '✅  Verification passed — all critical fixes confirmed by test suite',
+      failed:  '❌  Verification failed — some fixes did not resolve the issues',
+    };
+    strip.textContent = msgs[status] || status;
+  }
+
+  // ── Phase badge ────────────────────────────────────────────────────────
+  function renderPhase(phase) {
+    const el = document.getElementById('phaseBadge');
+    el.className = `phase-badge phase-${phase}`;
+    el.innerHTML = `<span class="dot"></span> ${phase}`;
+  }
+
+  // ── Apply state to UI ──────────────────────────────────────────────────
+  function applyState(s) {
+    document.getElementById('projectName').textContent = s.project_name;
+    renderPhase(s.phase);
+
+    const fill = document.getElementById('progressFill');
+    const pct  = document.getElementById('progressPct');
+    fill.style.width = s.progress + '%';
+    pct.textContent  = s.progress + '%';
+    if (s.phase === 'done') fill.classList.add('done');
+    else fill.classList.remove('done');
+
+    document.getElementById('lastRun').textContent = s.last_run_at || '—';
+    document.getElementById('verMeta').textContent = s.verification_status.replace('_',' ');
+
+    renderWorkflow(s.phase);
+    renderFindings(s.security_findings, 'secBody', 'secCount');
+    renderFindings(s.testing_findings,  'testBody', 'testCount');
+    renderFindings(s.quality_findings,  'qualBody', 'qualCount');
+    renderVerification(s.verification_status);
+
+    // Button enable states
+    const hasFindings = s.security_findings.length > 0;
+    document.getElementById('btnFix').disabled    = !hasFindings;
+    document.getElementById('btnTest').disabled   = !hasFindings;
+    document.getElementById('btnReport').disabled = !hasFindings;
+
+    // Report panel
+    if (s.report) renderReport(s.report);
+  }
+
+  // ── Report ─────────────────────────────────────────────────────────────
+  function renderReport(r) {
+    document.getElementById('reportCard').style.display = '';
+    document.getElementById('reportTime').textContent = r.generated_at;
+    document.getElementById('reportGrid').innerHTML = `
+      <div class="report-stat"><div class="value red">${r.open_high}</div><div class="label">Open High</div></div>
+      <div class="report-stat"><div class="value yellow">${r.open_medium}</div><div class="label">Open Medium</div></div>
+      <div class="report-stat"><div class="value green">${r.fixed}</div><div class="label">Fixed</div></div>
+      <div class="report-stat"><div class="value purple">${r.quality_notes}</div><div class="label">Quality Notes</div></div>
+    `;
+    document.getElementById('reportSummary').textContent = r.summary;
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────
+  let _toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // ── Loading state ──────────────────────────────────────────────────────
+  function setLoading(btnId, yes) {
+    const btn = document.getElementById(btnId);
+    if (yes) {
+      btn._orig = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner"></span> Working…';
+      btn.disabled = true;
+    } else {
+      btn.innerHTML = btn._orig || btn.innerHTML;
+      btn.disabled = false;
+    }
+  }
+
+  // ── API calls ──────────────────────────────────────────────────────────
+  async function api(method, path) {
+    const r = await fetch(path, { method });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  async function doAnalyze() {
+    setLoading('btnAnalyze', true);
+    try {
+      await api('POST', '/gate/analyze');
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+      toast('Analysis complete — findings loaded.');
+    } catch(e) { toast('Error: ' + e.message); }
+    finally { setLoading('btnAnalyze', false); }
+  }
+
+  async function doFix() {
+    setLoading('btnFix', true);
+    try {
+      await api('POST', '/gate/fix');
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+      toast('Issues patched — run tests to verify.');
+    } catch(e) { toast('Error: ' + e.message); }
+    finally { setLoading('btnFix', false); }
+  }
+
+  async function doTest() {
+    setLoading('btnTest', true);
+    try {
+      await api('POST', '/gate/test');
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+      toast('Tests complete — check verification status.');
+    } catch(e) { toast('Error: ' + e.message); }
+    finally { setLoading('btnTest', false); }
+  }
+
+  async function doReport() {
+    setLoading('btnReport', true);
+    try {
+      await api('GET', '/gate/report');
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+      toast('Final report generated.');
+      document.getElementById('reportCard').scrollIntoView({ behavior:'smooth' });
+    } catch(e) { toast('Error: ' + e.message); }
+    finally { setLoading('btnReport', false); }
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────
+  (async () => {
+    try {
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+    } catch(e) {
+      console.error('Failed to load status', e);
+      renderWorkflow('idle');
+    }
+  })();
+</script>
+</body>
+</html>
