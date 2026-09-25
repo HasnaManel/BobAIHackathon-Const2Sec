@@ -14,6 +14,15 @@ for the **SecureReview Copilot** Bob workflow. It must be:
 
 The application is **NOT the main product** — it is the realistic sample that Bob analyses.
 
+## Confirmed Design Decisions (approved by user)
+
+| Decision | Choice |
+|----------|--------|
+| Application name | **SecureGate** |
+| Weaknesses | All five (VULN-001 through VULN-005) — unchanged |
+| Admin seeding | Seed script generates a local credential; password printed once to stdout and stored hashed in DB — never in source code |
+| Verification gate | Both `pytest` full suite AND manual API smoke checks via `httpx`/curl |
+
 ---
 
 ## Recommended Repository Structure
@@ -109,13 +118,20 @@ helper used by all route handlers.
 **Todo List**
 1. Write `app/database.py` with `init_db()` and `get_db()` using Python's built-in `sqlite3`.
 2. Call `init_db()` from the FastAPI lifespan startup hook in `app/main.py`.
-3. Write `tests/conftest.py` with a `test_client` fixture that uses an in-memory SQLite DB
+3. Write `app/seed.py` — a standalone script (`python -m app.seed`) that:
+   - Generates a random 16-character password using `secrets.token_urlsafe`.
+   - Prints it once to stdout with a clear "DEMO ONLY — save this password" banner.
+   - Hashes it with bcrypt and inserts/upserts an `admin` user into the database.
+   - Is safe to re-run (upsert, not duplicate insert).
+4. Write `tests/conftest.py` with a `test_client` fixture that uses an in-memory SQLite DB
    so tests do not touch the real database.
 
 **Relevant Context**
 - Use Python's built-in `sqlite3` (no ORM) to keep dependencies minimal.
 - The `conftest.py` fixture must override `get_db` via FastAPI dependency override so tests are
   isolated.
+- `app/seed.py` must never hardcode a password — it always generates a fresh one at runtime.
+- The seed script is documented in `.env.example` and `README.md`.
 
 ---
 
