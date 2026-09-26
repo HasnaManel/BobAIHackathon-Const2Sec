@@ -9,7 +9,16 @@ Available fixtures:
   admin_headers   — Bearer token headers for a pre-created admin user.
 """
 
+import os
 import sqlite3
+
+# Set APP_SIGNING_KEY before any app module is imported so that auth.py does
+# not raise RuntimeError when no .env file is present (e.g. in CI or fresh
+# checkouts).  A real deployment should set this via a proper .env file.
+os.environ.setdefault(
+    "APP_SIGNING_KEY",
+    "test-only-key-do-not-use-in-production-aabbccddeeff00112233445566778899",
+)
 
 import pytest
 from fastapi.testclient import TestClient
