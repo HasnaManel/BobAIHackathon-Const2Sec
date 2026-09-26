@@ -559,7 +559,7 @@
   ];
 
   const PHASE_STEP = {
-    idle: -1, analyzing: 3, fixing: 5, testing: 5, done: 6,
+    idle: -1, analyzing: 3, fixing: 5, testing: 5, reporting: 6, done: 6,
   };
 
   function renderWorkflow(phase) {
@@ -799,12 +799,23 @@
     return r.json();
   }
 
+  // Poll GET /gate/status every 3 s until phase leaves the given runningPhase.
+  // Applies each intermediate state so the UI stays live.
+  async function pollUntilDone(runningPhase) {
+    while (true) {
+      await new Promise(r => setTimeout(r, 3000));
+      const s = await api('GET', '/gate/status');
+      applyState(s);
+      if (s.phase === 'error') throw new Error('Bob reported an error. Check server logs.');
+      if (s.phase !== runningPhase) return s;
+    }
+  }
+
   async function doAnalyze() {
     setLoading('btnAnalyze', true);
     try {
-      await api('POST', '/gate/analyze');
-      const s = await api('GET', '/gate/status');
-      applyState(s);
+      await api('POST', '/gate/analyze');          // returns 202 immediately
+      await pollUntilDone('analyzing');
       toast('Analysis complete — findings loaded.');
     } catch(e) { toast('Error: ' + e.message); }
     finally { setLoading('btnAnalyze', false); }
@@ -813,9 +824,8 @@
   async function doFix() {
     setLoading('btnFix', true);
     try {
-      await api('POST', '/gate/fix');
-      const s = await api('GET', '/gate/status');
-      applyState(s);
+      await api('POST', '/gate/fix');              // returns 202 immediately
+      await pollUntilDone('fixing');
       toast('Issues patched — run tests to verify.');
     } catch(e) { toast('Error: ' + e.message); }
     finally { setLoading('btnFix', false); }
@@ -824,9 +834,8 @@
   async function doTest() {
     setLoading('btnTest', true);
     try {
-      await api('POST', '/gate/test');
-      const s = await api('GET', '/gate/status');
-      applyState(s);
+      await api('POST', '/gate/test');             // returns 202 immediately
+      await pollUntilDone('testing');
       toast('Tests complete — check verification status.');
     } catch(e) { toast('Error: ' + e.message); }
     finally { setLoading('btnTest', false); }
@@ -835,9 +844,8 @@
   async function doReport() {
     setLoading('btnReport', true);
     try {
-      await api('GET', '/gate/report');
-      const s = await api('GET', '/gate/status');
-      applyState(s);
+      await api('GET', '/gate/report');            // returns 202 immediately
+      await pollUntilDone('reporting');
       toast('Final report generated.');
       document.getElementById('reportCard').scrollIntoView({ behavior:'smooth' });
     } catch(e) { toast('Error: ' + e.message); }

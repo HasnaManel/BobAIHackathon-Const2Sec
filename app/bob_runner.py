@@ -98,7 +98,7 @@ def run_bob(prompt: str, *, timeout: int = _DEFAULT_TIMEOUT) -> BobResult:
     # Build environment: inherit current env but ensure BOB_API_KEY is set.
     env = {**os.environ, "BOB_API_KEY": api_key}
 
-    cmd = [_BOB_EXECUTABLE, "run", prompt]
+    cmd = [_BOB_EXECUTABLE, "run", "--trust", prompt]
 
     try:
         # Capture raw bytes so we control the decode step.  Using text=True

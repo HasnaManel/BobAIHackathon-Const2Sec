@@ -26,6 +26,25 @@ from fastapi.testclient import TestClient
 from app.bob_runner import BobResult
 from app.main import app
 
+
+# ---------------------------------------------------------------------------
+# Helper: wait for async background thread to finish by polling /gate/status
+# ---------------------------------------------------------------------------
+
+def _wait_for_phase(client, running_phase: str, timeout: float = 5.0) -> dict:
+    """Poll /gate/status until the phase is no longer *running_phase*.
+
+    Returns the final status dict.  The background thread in the test uses a
+    mock that returns instantly, so this typically resolves in < 100 ms.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        s = client.get("/gate/status").json()
+        if s["phase"] != running_phase:
+            return s
+        time.sleep(0.05)
+    return client.get("/gate/status").json()
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -207,24 +226,24 @@ class TestGateNoAuthRequired:
     def test_analyze_accessible_without_auth(self, gate_client, with_docs):
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.post("/gate/analyze")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_fix_accessible_without_auth(self, gate_client):
         import app.dashboard as dash
         dash._state["security_findings"] = []
         resp = gate_client.post("/gate/fix")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_test_accessible_without_auth(self, gate_client):
         ok = BobResult(success=True, stdout="5 passed", stderr="", returncode=0)
         with patch("app.dashboard.run_bob", return_value=ok):
             resp = gate_client.post("/gate/test")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
     def test_report_accessible_without_auth(self, gate_client):
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.get("/gate/report")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +280,7 @@ class TestGateAnalyze:
     def test_analyze_success(self, gate_client, with_docs):
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.post("/gate/analyze")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert "message" in data
 
@@ -269,8 +288,9 @@ class TestGateAnalyze:
         """Analyze must populate both security_findings and subagent_findings."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
-        status = gate_client.get("/gate/status").json()
-        assert status["phase"] == "analyzing"
+        # Wait for the background thread to complete (mock returns instantly).
+        status = _wait_for_phase(gate_client, "analyzing")
+        assert status["phase"] == "done"
         assert status["progress"] == 100
         # Consolidated findings from markdown
         assert len(status["security_findings"]) > 0
@@ -281,6 +301,7 @@ class TestGateAnalyze:
         """Each consolidated finding must have id, severity, title, fixed."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         findings = gate_client.get("/gate/status").json()["security_findings"]
         for f in findings:
             assert "id" in f
@@ -292,6 +313,7 @@ class TestGateAnalyze:
         """Each subagent finding must have agent, severity, title."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         subagent = gate_client.get("/gate/status").json()["subagent_findings"]
         for f in subagent:
             assert "agent" in f
@@ -302,6 +324,7 @@ class TestGateAnalyze:
         """Multiple distinct agent names must appear in subagent_findings."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         subagent = gate_client.get("/gate/status").json()["subagent_findings"]
         agents = {f["agent"] for f in subagent}
         assert len(agents) >= 2, f"Expected multiple agents, got: {agents}"
@@ -310,6 +333,7 @@ class TestGateAnalyze:
         """Exact agent name strings from the JSON must appear in the response."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         subagent = gate_client.get("/gate/status").json()["subagent_findings"]
         agents = {f["agent"] for f in subagent}
         assert "Authentication & Authorization Agent" in agents
@@ -319,6 +343,7 @@ class TestGateAnalyze:
         """Severity values from the JSON must be present in the response."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         subagent = gate_client.get("/gate/status").json()["subagent_findings"]
         severities = {f["severity"] for f in subagent}
         assert "high" in severities
@@ -327,6 +352,7 @@ class TestGateAnalyze:
         """File and line information must be carried through to the response."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         subagent = gate_client.get("/gate/status").json()["subagent_findings"]
         auth_findings = [f for f in subagent if f.get("agent") == "Authentication & Authorization Agent"]
         assert len(auth_findings) > 0
@@ -338,6 +364,7 @@ class TestGateAnalyze:
         """Finding titles must come from the sample docs, not hard-coded strings."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         status = gate_client.get("/gate/status").json()
         titles = {f["title"] for f in status["security_findings"]}
         # Old placeholder must not appear; real title from sample docs must
@@ -348,6 +375,7 @@ class TestGateAnalyze:
         """The two lists must be separate — no duplicate entries across them."""
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             gate_client.post("/gate/analyze")
+        _wait_for_phase(gate_client, "analyzing")
         status = gate_client.get("/gate/status").json()
         consolidated_ids = {f.get("id") for f in status["security_findings"]}
         subagent_ids = {f.get("id") for f in status["subagent_findings"]}
@@ -355,17 +383,29 @@ class TestGateAnalyze:
         overlap = consolidated_ids & subagent_ids
         assert len(overlap) == 0, f"Unexpected overlap between lists: {overlap}"
 
-    def test_analyze_bob_failure_returns_502(self, gate_client):
-        with patch("app.dashboard.run_bob", return_value=_FAILURE):
+    def test_analyze_bob_failure_sets_error_phase(self, gate_client):
+        """When Bob fails and no output files exist, phase becomes 'error'."""
+        # Patch the loaders to return empty (simulate fresh repo with no prior docs).
+        with patch("app.dashboard._load_consolidated_findings", return_value=[]), \
+             patch("app.dashboard._load_subagent_findings", return_value=[]), \
+             patch("app.dashboard.run_bob", return_value=_FAILURE):
             resp = gate_client.post("/gate/analyze")
-        assert resp.status_code == 502
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "analyzing")
+        assert status["phase"] == "error"
 
-    def test_analyze_auth_failure_returns_502(self, gate_client, monkeypatch):
+    def test_analyze_auth_failure_sets_error_phase(self, gate_client, monkeypatch):
+        """Auth failure with no output files sets phase to 'error'; key must not leak."""
         monkeypatch.setenv("BOB_API_KEY", "mock-key")
-        with patch("app.dashboard.run_bob", return_value=_AUTH_FAILURE):
+        # Patch the loaders to return empty (simulate fresh repo with no prior docs).
+        with patch("app.dashboard._load_consolidated_findings", return_value=[]), \
+             patch("app.dashboard._load_subagent_findings", return_value=[]), \
+             patch("app.dashboard.run_bob", return_value=_AUTH_FAILURE):
             resp = gate_client.post("/gate/analyze")
-        assert resp.status_code == 502
+        assert resp.status_code == 202
         assert "mock-key" not in resp.text
+        status = _wait_for_phase(gate_client, "analyzing")
+        assert status["phase"] == "error"
 
     def test_analyze_bob_prompt_is_hardcoded(self, gate_client, with_docs):
         captured = {}
@@ -388,20 +428,27 @@ class TestGateTest:
         ok = BobResult(success=True, stdout="5 passed in 1.2s", stderr="", returncode=0)
         with patch("app.dashboard.run_bob", return_value=ok):
             resp = gate_client.post("/gate/test")
-        assert resp.status_code == 200
-        assert resp.json()["verification_status"] == "passed"
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "testing")
+        assert status["verification_status"] == "passed"
 
     def test_test_failed_when_failed_keyword_present(self, gate_client):
         fail = BobResult(success=True, stdout="2 failed, 3 passed", stderr="", returncode=0)
         with patch("app.dashboard.run_bob", return_value=fail):
             resp = gate_client.post("/gate/test")
-        assert resp.status_code == 200
-        assert resp.json()["verification_status"] == "failed"
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "testing")
+        assert status["verification_status"] == "failed"
 
-    def test_test_bob_failure_returns_502(self, gate_client):
-        with patch("app.dashboard.run_bob", return_value=_FAILURE):
+    def test_test_bob_infra_failure_marks_verification_failed(self, gate_client):
+        """A Bob infra failure (returncode=-1) must set verification_status=failed."""
+        infra_fail = BobResult(success=False, stdout="", stderr="", returncode=-1,
+                               error="Bob executable not found.")
+        with patch("app.dashboard.run_bob", return_value=infra_fail):
             resp = gate_client.post("/gate/test")
-        assert resp.status_code == 502
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "testing")
+        assert status["verification_status"] == "failed"
 
     def test_test_status_reflects_real_outcome(self, gate_client):
         import app.dashboard as dash
@@ -426,7 +473,7 @@ class TestGateFix:
         dash._state["security_findings"] = []
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.post("/gate/fix")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert "analysis" in resp.json()["message"].lower()
 
     def test_fix_success_marks_consolidated_findings_fixed(self, gate_client):
@@ -437,7 +484,8 @@ class TestGateFix:
         ]
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.post("/gate/fix")
-        assert resp.status_code == 200
+        assert resp.status_code == 202
+        _wait_for_phase(gate_client, "fixing")
         status = gate_client.get("/gate/status").json()
         assert status["security_findings"][0]["fixed"] is True
 
@@ -480,16 +528,23 @@ class TestGateReport:
     def test_report_success(self, gate_client):
         with patch("app.dashboard.run_bob", return_value=_SUCCESS):
             resp = gate_client.get("/gate/report")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "generated_at" in data
-        assert "summary" in data
-        assert "SECURITY_REVIEW_FINAL" in data["summary"] or "issues" in data["summary"]
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "reporting")
+        assert status["report"] is not None
+        r = status["report"]
+        assert "generated_at" in r
+        assert "summary" in r
+        assert "SECURITY_REVIEW_FINAL" in r["summary"] or "issues" in r["summary"]
 
-    def test_report_failure_returns_502(self, gate_client):
-        with patch("app.dashboard.run_bob", return_value=_FAILURE):
+    def test_report_bob_infra_failure_sets_error_phase(self, gate_client):
+        """A Bob infra failure (returncode=-1) must set phase=error."""
+        infra_fail = BobResult(success=False, stdout="", stderr="", returncode=-1,
+                               error="Bob executable not found.")
+        with patch("app.dashboard.run_bob", return_value=infra_fail):
             resp = gate_client.get("/gate/report")
-        assert resp.status_code == 502
+        assert resp.status_code == 202
+        status = _wait_for_phase(gate_client, "reporting")
+        assert status["phase"] == "error"
 
     def test_api_key_not_in_report_response(self, gate_client, monkeypatch):
         monkeypatch.setenv("BOB_API_KEY", "never-leak-this")

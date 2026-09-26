@@ -3,100 +3,144 @@
     "agent": "Authentication & Authorization Agent",
     "id": "AUTH-001",
     "severity": "high",
-    "title": "/gate/* endpoints have no authentication",
+    "title": "Unauthenticated access to all /gate/* endpoints",
     "file": "app/dashboard.py",
     "line": 325,
-    "detail": "The /gate/analyze, /gate/fix, /gate/test, and /gate/report endpoints are completely unauthenticated. Any network-reachable caller can invoke Bob agent subprocesses (consuming API quota), trigger source-file modifications on disk via /gate/fix, and cause indefinite server load without providing any credentials.",
-    "remediation": "Protect /gate/* endpoints with the existing require_admin dependency or at minimum Depends(get_current_user) to prevent unauthenticated abuse."
+    "detail": "POST /gate/analyze, POST /gate/fix, POST /gate/test, and GET /gate/report carry no authentication dependency. Any anonymous HTTP client can trigger a full Bob LLM run, cause source-code modifications via the fix agent, or run the test suite without any credential."
   },
   {
     "agent": "Authentication & Authorization Agent",
     "id": "AUTH-002",
+    "severity": "high",
+    "title": "Bob CLI invoked with --trust flag (auto-approves all tool use)",
+    "file": "app/bob_runner.py",
+    "line": 101,
+    "detail": "cmd = [_BOB_EXECUTABLE, 'run', '--trust', prompt] — the --trust flag disables Bob's interactive safety confirmations and auto-approves every tool call (file reads, writes, shell commands). Combined with unauthenticated /gate/* endpoints, any anonymous caller can cause Bob to execute arbitrary file-system operations."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-003",
     "severity": "medium",
-    "title": "Rate limiter bypassed behind reverse proxy",
+    "title": "Rate limiter keyed on raw request.client.host — bypassable behind a proxy",
     "file": "app/auth.py",
-    "line": 66,
-    "detail": "The in-process sliding-window rate limiter keys by request.client.host. Behind a reverse proxy all requests share the proxy's IP, causing the limiter to either deny all users simultaneously (DoS) or never throttle an attacker whose real IP is in X-Forwarded-For.",
-    "remediation": "Use FastAPI ProxyHeadersMiddleware or extract the real client IP from X-Forwarded-For/X-Real-IP. Alternatively use a proxy-aware rate-limiting library such as slowapi."
+    "line": 70,
+    "detail": "ip = request.client.host reads the TCP peer address. Behind a reverse proxy all requests share the single proxy IP, making the rate limiter useless. An attacker routing through rotating proxies can also bypass the limit trivially."
   },
   {
     "agent": "Input Validation Agent",
     "id": "VAL-001",
+    "severity": "medium",
+    "title": "run_bob() has no prompt whitelist enforced at the function boundary",
+    "file": "app/bob_runner.py",
+    "line": 75,
+    "detail": "The docstring states callers are responsible for passing only allowed prompts, but no _ALLOWED_PROMPTS constant exists in the file. The function accepts any arbitrary string. If new callers are added, arbitrary prompts reach the Bob subprocess."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-002",
     "severity": "low",
-    "title": "Non-finite float values accepted in ProductCreate.price",
+    "title": "price field uses float type for monetary value",
     "file": "app/models.py",
     "line": 66,
-    "detail": "The price field is declared as float with Field(..., gt=0). Python float and the JSON parser accept IEEE 754 special values Infinity and NaN. If such values reach the database and are later serialised they can break downstream consumers expecting finite JSON numbers.",
-    "remediation": "Add a field_validator that calls math.isfinite(v) and raises ValueError if not, or configure allow_inf_nan=False in the model config."
+    "detail": "price: float = Field(..., gt=0) stores prices as IEEE 754 double-precision floating-point. Binary floats cannot represent many decimal fractions exactly (e.g. 0.1 + 0.2 != 0.3). For a monetary field this causes display rounding errors and incorrect arithmetic."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-003",
+    "severity": "low",
+    "title": "No maximum price constraint on ProductCreate",
+    "file": "app/models.py",
+    "line": 66,
+    "detail": "price: float = Field(..., gt=0) accepts any positive value with no upper bound. A client can submit price=9e307, a valid IEEE 754 value that will be stored without error, potentially causing overflow or nonsensical output in downstream arithmetic."
   },
   {
     "agent": "Database Security Agent",
     "id": "DB-001",
     "severity": "medium",
-    "title": "SQLite database file committed to version control",
+    "title": "Real database file securegate.db committed to version control",
     "file": "securegate.db",
     "line": null,
-    "detail": "The file securegate.db is present in the repository root. If committed to git (even if later removed from HEAD) it is recoverable from history and may contain bcrypt-hashed passwords from seeded demo accounts, increasing the attack surface for offline hash-cracking.",
-    "remediation": "Add *.db and securegate.db to .gitignore. Run git rm --cached securegate.db. Consider BFG/filter-branch to purge from git history."
+    "detail": "A live SQLite database file exists at the repository root and is tracked by git. It may contain seeded user records including hashed passwords and email addresses. Any developer who clones the repository receives a copy; historical git objects may preserve previous states."
   },
   {
     "agent": "Database Security Agent",
     "id": "DB-002",
     "severity": "low",
-    "title": "APP_DATABASE_PATH defaults to relative path securegate.db",
+    "title": "PRAGMA foreign_keys = ON not set in init_db() connection",
     "file": "app/database.py",
-    "line": 15,
-    "detail": "When APP_DATABASE_PATH is not set the database is created at securegate.db relative to the process working directory. In production or containerised deployments this is unpredictable and may place the database alongside source code, risking accidental inclusion in build artifacts.",
-    "remediation": "Default to an absolute path such as /var/lib/securegate/securegate.db or document that the variable must be explicitly set in production."
+    "line": 43,
+    "detail": "get_db() correctly enables PRAGMA foreign_keys = ON on every request connection, but init_db() opens its own sqlite3.connect() and never enables foreign keys. SQLite foreign key enforcement is per-connection and defaults to OFF, so ON DELETE CASCADE constraints may silently fail during schema init and seed operations."
   },
   {
     "agent": "Secrets & Configuration Agent",
     "id": "SEC-001",
-    "severity": "low",
-    "title": "No startup-time validation of BOB_API_KEY",
-    "file": "app/bob_runner.py",
-    "line": 88,
-    "detail": "BOB_API_KEY is only checked when a /gate/* endpoint is invoked. Unlike APP_SIGNING_KEY which raises RuntimeError at module import time, a missing BOB_API_KEY is silently allowed at startup and only surfaces as a 502 when gate endpoints are called, making misconfiguration harder to detect.",
-    "remediation": "Add a module-level or lifespan check that logs a warning or raises RuntimeError when BOB_API_KEY is absent, consistent with APP_SIGNING_KEY validation."
+    "severity": "medium",
+    "title": "python-dotenv missing from requirements.txt",
+    "file": "requirements.txt",
+    "line": null,
+    "detail": "app/auth.py lines 24-26 execute 'from dotenv import load_dotenv; load_dotenv()'. The package python-dotenv is not listed in requirements.txt. A fresh install will fail with ModuleNotFoundError, or silently skip .env loading if python-dotenv happens to be present as a transitive dependency."
   },
   {
     "agent": "Secrets & Configuration Agent",
     "id": "SEC-002",
-    "severity": "info",
-    "title": "pydantic not listed as an explicit dependency in requirements.txt",
-    "file": "requirements.txt",
-    "line": null,
-    "detail": "pydantic (v2) is used throughout the codebase but is not listed in requirements.txt. It is installed as a transitive dependency of fastapi==0.115.5. A future FastAPI upgrade changing its Pydantic pin could silently break all model validation logic.",
-    "remediation": "Add pydantic>=2.0,<3 (or the exact pinned version) to requirements.txt."
+    "severity": "low",
+    "title": "BOB_API_KEY not validated at application startup",
+    "file": "app/bob_runner.py",
+    "line": 88,
+    "detail": "BOB_API_KEY is only checked inside run_bob() which is called from background threads. The application starts and returns 202 for gate endpoints before the missing-key error is detected. Operators may believe the service is healthy until the first actual Bob run fails silently."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-003",
+    "severity": "low",
+    "title": "APP_TOKEN_MINUTES has no upper bound validation",
+    "file": "app/auth.py",
+    "line": 54,
+    "detail": "_TOKEN_MINUTES: int = int(os.environ.get('APP_TOKEN_MINUTES', '30')) accepts any integer. A misconfigured APP_TOKEN_MINUTES=999999999 would issue JWTs that expire decades in the future, effectively making them permanent. No positive-integer or maximum-value guard is applied."
   },
   {
     "agent": "Test Coverage Agent",
     "id": "TEST-001",
     "severity": "medium",
-    "title": "No test exercises the rate limiter 429 rejection path",
-    "file": "tests/test_auth.py",
-    "line": null,
-    "detail": "The autouse fixture _reset_rate_limiter clears the rate-limiter bucket before every test, ensuring no test ever reaches the 10-request limit. The 429 response branch is never exercised; a regression disabling the rate limiter would go undetected.",
-    "remediation": "Add a test that sends 11 login requests in sequence without clearing the bucket between them and asserts the 11th returns HTTP 429."
+    "title": "Race condition in test_analyze_populates_both_finding_lists — contradictory assertions",
+    "file": "tests/test_gate.py",
+    "line": 268,
+    "detail": "The test starts a background thread via POST /gate/analyze and immediately polls /gate/status. It then asserts phase == 'analyzing' (thread not done) AND progress == 100 (thread done). These are mutually contradictory; the test is inherently flaky depending on thread scheduling."
   },
   {
     "agent": "Test Coverage Agent",
     "id": "TEST-002",
-    "severity": "low",
-    "title": "Session-scoped shared database risks inter-test state bleed",
-    "file": "tests/conftest.py",
-    "line": 53,
-    "detail": "The client, auth_headers, and admin_headers fixtures are all scope=session, sharing a single in-memory SQLite connection across the entire test run. Hardcoded usernames in individual tests can collide if a future test uses the same name, causing cascading 409 failures that are hard to diagnose.",
-    "remediation": "Scope the database fixture to function level or generate unique usernames/emails per test using uuid.uuid4()."
+    "severity": "medium",
+    "title": "TestGateTestNoneStdout writes to real on-disk database, not test fixture",
+    "file": "tests/test_bob_runner.py",
+    "line": 248,
+    "detail": "The test calls get_db() directly without the dependency_overrides set by the client fixture. This opens a connection to the real securegate.db and inserts a nulltest_admin user, polluting the developer database and making test results dependent on whether the db file exists."
   },
   {
     "agent": "Test Coverage Agent",
     "id": "TEST-003",
-    "severity": "low",
-    "title": "No test for non-finite float price being accepted",
-    "file": "tests/test_products.py",
+    "severity": "medium",
+    "title": "No test verifying require_admin rejects regular users with HTTP 403",
+    "file": "tests/test_users.py",
     "line": null,
-    "detail": "VAL-001 (non-finite float in ProductCreate.price) is not covered by any test. There is no assertion that sending price: Infinity or price: NaN returns a 422 validation error.",
-    "remediation": "Add a test that posts a product with price set to a non-finite value and asserts HTTP 422 is returned."
+    "detail": "The require_admin dependency is the primary guard for admin-only routes. No test calls an admin-only endpoint as a regular authenticated user and asserts 403 Forbidden. If require_admin is accidentally removed, no test catches the regression."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-004",
+    "severity": "low",
+    "title": "PUT /users/me missing unauthenticated-request test",
+    "file": "tests/test_users.py",
+    "line": 63,
+    "detail": "TestUpdateMyEmail covers authenticated success and duplicate email but never tests that an unauthenticated PUT /users/me returns 401 or 403. If authentication is accidentally removed from the route, no test catches the regression."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-005",
+    "severity": "low",
+    "title": "Login test accepts HTTP 404 as valid, masking a missing-router regression",
+    "file": "tests/test_auth.py",
+    "line": 124,
+    "detail": "test_token_grants_access_to_protected_route asserts resp.status_code in (200, 404). A 404 means /users/me does not exist, so the test passes even when the users router is not registered. The stale comment says 404 is acceptable before a sub-task, but that sub-task is complete."
   }
 ]

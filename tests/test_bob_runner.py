@@ -60,7 +60,6 @@ class TestBobRunnerSuccess:
         assert result.error == ""
 
     def test_calls_bob_run_with_correct_args(self, monkeypatch):
-        import sys
         from app.bob_runner import _BOB_EXECUTABLE
         monkeypatch.setenv("BOB_API_KEY", "test-key")
         with patch("subprocess.run", return_value=_completed()) as mock_run:
@@ -68,7 +67,8 @@ class TestBobRunnerSuccess:
 
         args = mock_run.call_args[0][0]
         # On Windows the wrapper is "bob.cmd"; on other platforms it is "bob".
-        assert args == [_BOB_EXECUTABLE, "run", "my prompt"]
+        # --trust is passed so Bob doesn't prompt for confirmation in CI/batch mode.
+        assert args == [_BOB_EXECUTABLE, "run", "--trust", "my prompt"]
 
     def test_shell_false(self, monkeypatch):
         """shell=False must always be used — never allow shell injection."""
@@ -236,32 +236,12 @@ class TestGateTestNoneStdout:
     """Verify /gate/test doesn't AttributeError when stdout is None."""
 
     def test_none_stdout_treated_as_empty(self, monkeypatch):
+        import time
         from app.bob_runner import BobResult
         from app import dashboard
-        from app.auth import hash_password, create_access_token
-        from app.database import get_db
 
         monkeypatch.setenv("BOB_API_KEY", "test-key")
         none_result = BobResult(success=True, stdout=None, stderr="", returncode=0)
-
-        # Create an admin token directly — bypass rate limiter.
-        db_gen = get_db()
-        db = next(db_gen)
-        db.execute(
-            "INSERT INTO users (username, email, hashed_password, is_admin) "
-            "VALUES (?, ?, ?, 1) "
-            "ON CONFLICT(username) DO UPDATE SET is_admin = 1",
-            ("nulltest_admin", "nulltest@test.local", hash_password("Unused1!")),
-        )
-        db.commit()
-        row = db.execute("SELECT id FROM users WHERE username = 'nulltest_admin'").fetchone()
-        user_id = row["id"]
-        try:
-            next(db_gen)
-        except StopIteration:
-            pass
-        token = create_access_token({"sub": str(user_id), "is_admin": True})
-        headers = {"Authorization": f"Bearer {token}"}
 
         original_state = dashboard._state.copy()
         try:
@@ -269,8 +249,15 @@ class TestGateTestNoneStdout:
             from app.main import app
             with TestClient(app, raise_server_exceptions=True) as c:
                 with patch("app.dashboard.run_bob", return_value=none_result):
-                    resp = c.post("/gate/test", headers=headers)
-            assert resp.status_code == 200
-            assert resp.json()["verification_status"] == "passed"
+                    resp = c.post("/gate/test")
+                assert resp.status_code == 202
+                # Wait for background thread (mock returns instantly).
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    s = c.get("/gate/status").json()
+                    if s["phase"] != "testing":
+                        break
+                    time.sleep(0.05)
+                assert s["verification_status"] == "passed"
         finally:
             dashboard._state.update(original_state)

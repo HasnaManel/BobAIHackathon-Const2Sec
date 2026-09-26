@@ -21,6 +21,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.database import get_db
 from app.models import TokenResponse, UserLogin, UserProfile, UserRegister
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
