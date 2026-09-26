@@ -242,6 +242,24 @@
       .findings-grid { grid-template-columns: 1fr; }
     }
 
+    /* Subagent findings card */
+    .subagent-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      margin-bottom: 8px;
+    }
+    .subagent-item:last-child { margin-bottom: 0; }
+    .subagent-agent {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 4px;
+    }
+
     .finding-item {
       padding: 10px 12px;
       border-radius: 6px;
@@ -491,6 +509,19 @@
 
     </div>
 
+    <!-- Subagent Findings — individual per-domain observations from IBM Bob -->
+    <div class="card" id="subagentCard">
+      <div class="card-header" style="color:var(--accent)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Subagent Findings
+        <span style="margin-left:6px;font-size:10px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">Individual observations per security domain</span>
+        <span id="subagentCount" style="margin-left:auto;color:var(--text);font-size:12px"></span>
+      </div>
+      <div class="card-body" id="subagentBody">
+        <div class="empty-state">Run analysis to see subagent findings</div>
+      </div>
+    </div>
+
     <!-- Verification status -->
     <div id="verStrip" class="verification-strip ver-not_run">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -545,6 +576,51 @@
   }
 
   // ── Render findings ────────────────────────────────────────────────────
+  // FIND-003 fix: use DOM API (textContent) instead of innerHTML template
+  // interpolation so that untrusted finding fields cannot inject HTML/JS.
+  function _createFindingElement(f) {
+    const item = document.createElement('div');
+    item.className = 'finding-item';
+
+    const top = document.createElement('div');
+    top.className = 'finding-top';
+
+    const sev = document.createElement('span');
+    sev.className = 'sev sev-' + (f.severity || '').replace(/[^a-z]/gi, '');
+    sev.textContent = f.severity || '';
+    top.appendChild(sev);
+
+    const fid = document.createElement('span');
+    fid.className = 'finding-id';
+    fid.textContent = f.id || '';
+    top.appendChild(fid);
+
+    if (f.fixed) {
+      const fx = document.createElement('span');
+      fx.className = 'finding-fixed';
+      fx.textContent = '✓ fixed';
+      top.appendChild(fx);
+    }
+    item.appendChild(top);
+
+    const title = document.createElement('div');
+    title.className = 'finding-title';
+    title.textContent = f.title || '';
+    item.appendChild(title);
+
+    const detail = document.createElement('div');
+    detail.className = 'finding-detail';
+    detail.textContent = f.detail || '';
+    item.appendChild(detail);
+
+    const file = document.createElement('div');
+    file.className = 'finding-file';
+    file.textContent = (f.file || '') + (f.line ? ':' + f.line : '');
+    item.appendChild(file);
+
+    return item;
+  }
+
   function renderFindings(items, bodyId, countId) {
     const body = document.getElementById(bodyId);
     const cnt  = document.getElementById(countId);
@@ -554,17 +630,79 @@
       return;
     }
     cnt.textContent = `${items.length} finding${items.length !== 1 ? 's' : ''}`;
-    body.innerHTML = items.map(f => `
-      <div class="finding-item">
-        <div class="finding-top">
-          <span class="sev sev-${f.severity}">${f.severity}</span>
-          <span class="finding-id">${f.id}</span>
-          ${f.fixed ? '<span class="finding-fixed">✓ fixed</span>' : ''}
-        </div>
-        <div class="finding-title">${f.title}</div>
-        <div class="finding-detail">${f.detail}</div>
-        <div class="finding-file">${f.file}${f.line ? ':' + f.line : ''}</div>
-      </div>`).join('');
+    body.replaceChildren(...items.map(_createFindingElement));
+  }
+
+  // ── Render subagent findings ───────────────────────────────────────────
+  function renderSubagentFindings(items) {
+    const body = document.getElementById('subagentBody');
+    const cnt  = document.getElementById('subagentCount');
+    if (!items || items.length === 0) {
+      body.innerHTML = '<div class="empty-state">No subagent findings</div>';
+      cnt.textContent = '';
+      return;
+    }
+    cnt.textContent = `${items.length} finding${items.length !== 1 ? 's' : ''}`;
+
+    // Group by agent name so each agent's findings are visually grouped.
+    const byAgent = {};
+    for (const f of items) {
+      const agent = f.agent || 'Unknown Agent';
+      if (!byAgent[agent]) byAgent[agent] = [];
+      byAgent[agent].push(f);
+    }
+
+    const container = document.createDocumentFragment();
+    for (const [agent, findings] of Object.entries(byAgent)) {
+      // Agent group header
+      const agentHeader = document.createElement('div');
+      agentHeader.className = 'subagent-agent';
+      agentHeader.textContent = agent;
+      container.appendChild(agentHeader);
+
+      for (const f of findings) {
+        const item = document.createElement('div');
+        item.className = 'subagent-item';
+
+        const top = document.createElement('div');
+        top.className = 'finding-top';
+
+        const sev = document.createElement('span');
+        sev.className = 'sev sev-' + (f.severity || '').replace(/[^a-z]/gi, '');
+        sev.textContent = f.severity || '';
+        top.appendChild(sev);
+
+        if (f.id) {
+          const fid = document.createElement('span');
+          fid.className = 'finding-id';
+          fid.textContent = f.id;
+          top.appendChild(fid);
+        }
+        item.appendChild(top);
+
+        const title = document.createElement('div');
+        title.className = 'finding-title';
+        title.textContent = f.title || '';
+        item.appendChild(title);
+
+        if (f.detail) {
+          const detail = document.createElement('div');
+          detail.className = 'finding-detail';
+          detail.textContent = f.detail;
+          item.appendChild(detail);
+        }
+
+        if (f.file) {
+          const file = document.createElement('div');
+          file.className = 'finding-file';
+          file.textContent = f.file + (f.line ? ':' + f.line : '');
+          item.appendChild(file);
+        }
+
+        container.appendChild(item);
+      }
+    }
+    body.replaceChildren(container);
   }
 
   // ── Verification strip ─────────────────────────────────────────────────
@@ -605,6 +743,7 @@
     renderFindings(s.security_findings, 'secBody', 'secCount');
     renderFindings(s.testing_findings,  'testBody', 'testCount');
     renderFindings(s.quality_findings,  'qualBody', 'qualCount');
+    renderSubagentFindings(s.subagent_findings || []);
     renderVerification(s.verification_status);
 
     // Button enable states

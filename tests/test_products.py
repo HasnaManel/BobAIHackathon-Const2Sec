@@ -78,10 +78,24 @@ class TestDeleteProduct:
             f"/products/{product['id']}", headers=auth_headers
         )
         assert resp.status_code == 204
-# VULN-005 (intentional gap): the test that would assert a non-owner cannot
-# delete another user's product is ABSENT here.  The SecureReview Copilot
-# should detect this missing regression test and recommend it be added.
-
+    def test_non_owner_cannot_delete_product(
+        self, client: TestClient, auth_headers: dict
+    ):
+        """FIND-009 / TEST-002: a non-owner, non-admin user must receive 403."""
+        # Create a product as the regular user.
+        product = _create_product(client, auth_headers, name="OwnedByRegular")
+        # Register and log in a second, non-admin user.
+        client.post(
+            "/auth/register",
+            json={"username": "thief", "email": "thief@example.com", "password": "ThiefPass1!"},
+        )
+        t = client.post(
+            "/auth/login",
+            json={"username": "thief", "password": "ThiefPass1!"},
+        )
+        thief_headers = {"Authorization": f"Bearer {t.json()['access_token']}"}
+        resp = client.delete(f"/products/{product['id']}", headers=thief_headers)
+        assert resp.status_code == 403
 
     def test_admin_can_delete_any_product(
         self, client: TestClient, auth_headers: dict, admin_headers: dict

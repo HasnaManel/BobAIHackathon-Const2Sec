@@ -34,6 +34,22 @@ def _get_test_db():
     yield _IN_MEMORY_CONN
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Clear the in-process rate-limiter before every test.
+
+    Tests run from the same IP ("testclient") and accumulate against the
+    sliding-window bucket.  Resetting before each test keeps them isolated
+    from one another without raising the production limit.
+    """
+    try:
+        from app.auth import _rate_buckets
+        _rate_buckets.clear()
+    except ImportError:
+        pass
+    yield
+
+
 @pytest.fixture(scope="session")
 def client():
     """TestClient backed by a fresh in-memory database."""
@@ -45,6 +61,14 @@ def client():
     from app.database import _SCHEMA
     _IN_MEMORY_CONN.executescript(_SCHEMA)
     _IN_MEMORY_CONN.commit()
+
+    # Reset the in-process rate-limiter so test-suite login calls (all from
+    # the same "testclient" IP) don't exhaust the 10/minute bucket.
+    try:
+        from app.auth import _rate_buckets
+        _rate_buckets.clear()
+    except ImportError:
+        pass
 
     app.dependency_overrides[get_db] = _get_test_db
 
@@ -61,6 +85,15 @@ def client():
 # ---------------------------------------------------------------------------
 
 def _create_user_and_login(client, username: str, password: str, email: str) -> dict:
+    # Clear the in-process rate-limiter before each fixture login so that
+    # the cumulative auth calls made by the test suite don't exhaust the
+    # 10/minute bucket before these session-scope fixtures complete.
+    try:
+        from app.auth import _rate_buckets
+        _rate_buckets.clear()
+    except ImportError:
+        pass
+
     client.post(
         "/auth/register",
         json={"username": username, "email": email, "password": password},

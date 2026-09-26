@@ -49,10 +49,10 @@ def get_user_profile(
     - Admins receive the full profile.
     - Regular users receive only public fields (id, username).
     """
-    # VULN-002 (intentional): user_id is interpolated directly into the SQL
-    # string instead of using a parameterised query — SQL injection risk.
+    # FIND-003 fix: use a parameterised query to prevent SQL injection.
     row = db.execute(
-        f"SELECT id, username, email, is_admin, created_at FROM users WHERE id = {user_id}"
+        "SELECT id, username, email, is_admin, created_at FROM users WHERE id = ?",
+        (user_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

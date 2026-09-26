@@ -83,7 +83,11 @@ def delete_product(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
 
-    # VULN-001 (intentional): ownership check removed — any authenticated user
-    # can delete any product, regardless of whether they own it.
+    # FIND-002 fix: enforce ownership — only the owner or an admin may delete.
+    if row["owner_id"] != current_user["id"] and not current_user["is_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this product.",
+        )
     db.execute("DELETE FROM products WHERE id = ?", (product_id,))
     db.commit()

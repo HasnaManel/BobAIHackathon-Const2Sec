@@ -1,0 +1,102 @@
+[
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-001",
+    "severity": "high",
+    "title": "/gate/* endpoints have no authentication",
+    "file": "app/dashboard.py",
+    "line": 325,
+    "detail": "The /gate/analyze, /gate/fix, /gate/test, and /gate/report endpoints are completely unauthenticated. Any network-reachable caller can invoke Bob agent subprocesses (consuming API quota), trigger source-file modifications on disk via /gate/fix, and cause indefinite server load without providing any credentials.",
+    "remediation": "Protect /gate/* endpoints with the existing require_admin dependency or at minimum Depends(get_current_user) to prevent unauthenticated abuse."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-002",
+    "severity": "medium",
+    "title": "Rate limiter bypassed behind reverse proxy",
+    "file": "app/auth.py",
+    "line": 66,
+    "detail": "The in-process sliding-window rate limiter keys by request.client.host. Behind a reverse proxy all requests share the proxy's IP, causing the limiter to either deny all users simultaneously (DoS) or never throttle an attacker whose real IP is in X-Forwarded-For.",
+    "remediation": "Use FastAPI ProxyHeadersMiddleware or extract the real client IP from X-Forwarded-For/X-Real-IP. Alternatively use a proxy-aware rate-limiting library such as slowapi."
+  },
+  {
+    "agent": "Input Validation Agent",
+    "id": "VAL-001",
+    "severity": "low",
+    "title": "Non-finite float values accepted in ProductCreate.price",
+    "file": "app/models.py",
+    "line": 66,
+    "detail": "The price field is declared as float with Field(..., gt=0). Python float and the JSON parser accept IEEE 754 special values Infinity and NaN. If such values reach the database and are later serialised they can break downstream consumers expecting finite JSON numbers.",
+    "remediation": "Add a field_validator that calls math.isfinite(v) and raises ValueError if not, or configure allow_inf_nan=False in the model config."
+  },
+  {
+    "agent": "Database Security Agent",
+    "id": "DB-001",
+    "severity": "medium",
+    "title": "SQLite database file committed to version control",
+    "file": "securegate.db",
+    "line": null,
+    "detail": "The file securegate.db is present in the repository root. If committed to git (even if later removed from HEAD) it is recoverable from history and may contain bcrypt-hashed passwords from seeded demo accounts, increasing the attack surface for offline hash-cracking.",
+    "remediation": "Add *.db and securegate.db to .gitignore. Run git rm --cached securegate.db. Consider BFG/filter-branch to purge from git history."
+  },
+  {
+    "agent": "Database Security Agent",
+    "id": "DB-002",
+    "severity": "low",
+    "title": "APP_DATABASE_PATH defaults to relative path securegate.db",
+    "file": "app/database.py",
+    "line": 15,
+    "detail": "When APP_DATABASE_PATH is not set the database is created at securegate.db relative to the process working directory. In production or containerised deployments this is unpredictable and may place the database alongside source code, risking accidental inclusion in build artifacts.",
+    "remediation": "Default to an absolute path such as /var/lib/securegate/securegate.db or document that the variable must be explicitly set in production."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-001",
+    "severity": "low",
+    "title": "No startup-time validation of BOB_API_KEY",
+    "file": "app/bob_runner.py",
+    "line": 88,
+    "detail": "BOB_API_KEY is only checked when a /gate/* endpoint is invoked. Unlike APP_SIGNING_KEY which raises RuntimeError at module import time, a missing BOB_API_KEY is silently allowed at startup and only surfaces as a 502 when gate endpoints are called, making misconfiguration harder to detect.",
+    "remediation": "Add a module-level or lifespan check that logs a warning or raises RuntimeError when BOB_API_KEY is absent, consistent with APP_SIGNING_KEY validation."
+  },
+  {
+    "agent": "Secrets & Configuration Agent",
+    "id": "SEC-002",
+    "severity": "info",
+    "title": "pydantic not listed as an explicit dependency in requirements.txt",
+    "file": "requirements.txt",
+    "line": null,
+    "detail": "pydantic (v2) is used throughout the codebase but is not listed in requirements.txt. It is installed as a transitive dependency of fastapi==0.115.5. A future FastAPI upgrade changing its Pydantic pin could silently break all model validation logic.",
+    "remediation": "Add pydantic>=2.0,<3 (or the exact pinned version) to requirements.txt."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-001",
+    "severity": "medium",
+    "title": "No test exercises the rate limiter 429 rejection path",
+    "file": "tests/test_auth.py",
+    "line": null,
+    "detail": "The autouse fixture _reset_rate_limiter clears the rate-limiter bucket before every test, ensuring no test ever reaches the 10-request limit. The 429 response branch is never exercised; a regression disabling the rate limiter would go undetected.",
+    "remediation": "Add a test that sends 11 login requests in sequence without clearing the bucket between them and asserts the 11th returns HTTP 429."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-002",
+    "severity": "low",
+    "title": "Session-scoped shared database risks inter-test state bleed",
+    "file": "tests/conftest.py",
+    "line": 53,
+    "detail": "The client, auth_headers, and admin_headers fixtures are all scope=session, sharing a single in-memory SQLite connection across the entire test run. Hardcoded usernames in individual tests can collide if a future test uses the same name, causing cascading 409 failures that are hard to diagnose.",
+    "remediation": "Scope the database fixture to function level or generate unique usernames/emails per test using uuid.uuid4()."
+  },
+  {
+    "agent": "Test Coverage Agent",
+    "id": "TEST-003",
+    "severity": "low",
+    "title": "No test for non-finite float price being accepted",
+    "file": "tests/test_products.py",
+    "line": null,
+    "detail": "VAL-001 (non-finite float in ProductCreate.price) is not covered by any test. There is no assertion that sending price: Infinity or price: NaN returns a 422 validation error.",
+    "remediation": "Add a test that posts a product with price set to a non-finite value and asserts HTTP 422 is returned."
+  }
+]
