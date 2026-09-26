@@ -2,145 +2,127 @@
   {
     "agent": "Authentication & Authorization Agent",
     "id": "AUTH-001",
-    "severity": "high",
-    "title": "Unauthenticated access to all /gate/* endpoints",
-    "file": "app/dashboard.py",
-    "line": 325,
-    "detail": "POST /gate/analyze, POST /gate/fix, POST /gate/test, and GET /gate/report carry no authentication dependency. Any anonymous HTTP client can trigger a full Bob LLM run, cause source-code modifications via the fix agent, or run the test suite without any credential."
+    "severity": "critical",
+    "title": "JWT signing key defaults to empty string — forged tokens possible",
+    "file": "app/auth.py",
+    "line": 33,
+    "detail": "_SIGNING_KEY_RAW is read from os.environ.get(\"APP_SIGNING_KEY\", \"\"). When APP_SIGNING_KEY is unset the key is an empty string. Prior to the RuntimeError guard (added as 'FIND-001 fix') the application silently accepted an empty key, allowing any attacker to forge JWT tokens signed with an empty secret."
   },
   {
     "agent": "Authentication & Authorization Agent",
     "id": "AUTH-002",
     "severity": "high",
-    "title": "Bob CLI invoked with --trust flag (auto-approves all tool use)",
-    "file": "app/bob_runner.py",
-    "line": 101,
-    "detail": "cmd = [_BOB_EXECUTABLE, 'run', '--trust', prompt] — the --trust flag disables Bob's interactive safety confirmations and auto-approves every tool call (file reads, writes, shell commands). Combined with unauthenticated /gate/* endpoints, any anonymous caller can cause Bob to execute arbitrary file-system operations."
+    "title": "Missing ownership check on DELETE /products/{product_id} — IDOR",
+    "file": "app/products.py",
+    "line": 71,
+    "detail": "The delete_product endpoint fetches the product row and executes DELETE without verifying that current_user[\"id\"] == row[\"owner_id\"]. Any authenticated user can delete any other user's product. Comment 'FIND-002 fix: enforce ownership' confirms the original code lacked this guard."
   },
   {
     "agent": "Authentication & Authorization Agent",
     "id": "AUTH-003",
     "severity": "medium",
-    "title": "Rate limiter keyed on raw request.client.host — bypassable behind a proxy",
+    "title": "JWT sub claim not validated as integer — potential 500 error",
     "file": "app/auth.py",
-    "line": 70,
-    "detail": "ip = request.client.host reads the TCP peer address. Behind a reverse proxy all requests share the single proxy IP, making the rate limiter useless. An attacker routing through rotating proxies can also bypass the limit trivially."
+    "line": 133,
+    "detail": "get_current_user reads payload.get(\"sub\") and passes it to int(sub). A crafted JWT with sub=null or sub=\"1 OR 1=1\" causes ValueError which propagates as HTTP 500 unless the try/except guard (FIND-007 fix) is in place."
+  },
+  {
+    "agent": "Authentication & Authorization Agent",
+    "id": "AUTH-004",
+    "severity": "high",
+    "title": "No rate limiting on /auth/login and /auth/register — brute-force risk",
+    "file": "app/auth.py",
+    "line": 172,
+    "detail": "Both login and register accept unlimited requests per IP. An attacker can brute-force passwords or perform credential stuffing at full request rate. The _check_rate_limit() function is defined (FIND-006 fix) but must be verified to be called at the top of each handler."
   },
   {
     "agent": "Input Validation Agent",
     "id": "VAL-001",
-    "severity": "medium",
-    "title": "run_bob() has no prompt whitelist enforced at the function boundary",
-    "file": "app/bob_runner.py",
-    "line": 75,
-    "detail": "The docstring states callers are responsible for passing only allowed prompts, but no _ALLOWED_PROMPTS constant exists in the file. The function accepts any arbitrary string. If new callers are added, arbitrary prompts reach the Bob subprocess."
+    "severity": "critical",
+    "title": "No password complexity policy on UserRegister — trivial passwords accepted",
+    "file": "app/models.py",
+    "line": 16,
+    "detail": "UserRegister.password only requires min_length=8. No field_validator enforces uppercase, lowercase, digit, or special character. A password like 'aaaaaaaa' is accepted. The password_complexity validator shown in comments does not cover special characters and is not complete."
   },
   {
     "agent": "Input Validation Agent",
     "id": "VAL-002",
-    "severity": "low",
-    "title": "price field uses float type for monetary value",
+    "severity": "high",
+    "title": "No input length limits on UserLogin fields — bcrypt DoS via oversized password",
     "file": "app/models.py",
-    "line": 66,
-    "detail": "price: float = Field(..., gt=0) stores prices as IEEE 754 double-precision floating-point. Binary floats cannot represent many decimal fractions exactly (e.g. 0.1 + 0.2 != 0.3). For a monetary field this causes display rounding errors and incorrect arithmetic."
+    "line": 31,
+    "detail": "UserLogin.username and UserLogin.password have no max_length constraint. bcrypt silently truncates beyond 72 bytes but still invokes the full hashing round, enabling a CPU-exhaustion DoS by submitting megabyte-sized password payloads. UserRegister already has max_length=128 — UserLogin must match."
   },
   {
     "agent": "Input Validation Agent",
     "id": "VAL-003",
-    "severity": "low",
-    "title": "No maximum price constraint on ProductCreate",
-    "file": "app/models.py",
-    "line": 66,
-    "detail": "price: float = Field(..., gt=0) accepts any positive value with no upper bound. A client can submit price=9e307, a valid IEEE 754 value that will be stored without error, potentially causing overflow or nonsensical output in downstream arithmetic."
+    "severity": "critical",
+    "title": "SQL injection via string interpolation in GET /users/{user_id} (planned VULN-002)",
+    "file": "app/users.py",
+    "line": 53,
+    "detail": "The file header explicitly notes that Sub-Task 7 will replace the current parameterised query with unsafe string interpolation (f\"... WHERE id = {user_id}\"). This planned change introduces a SQL injection vulnerability enabling full database enumeration including hashed passwords."
   },
   {
     "agent": "Database Security Agent",
     "id": "DB-001",
-    "severity": "medium",
-    "title": "Real database file securegate.db committed to version control",
-    "file": "securegate.db",
-    "line": null,
-    "detail": "A live SQLite database file exists at the repository root and is tracked by git. It may contain seeded user records including hashed passwords and email addresses. Any developer who clones the repository receives a copy; historical git objects may preserve previous states."
+    "severity": "critical",
+    "title": "Planned SQL injection in users lookup via string interpolation",
+    "file": "app/users.py",
+    "line": 53,
+    "detail": "The NOTE comment confirms that a future sub-task will introduce f-string interpolation of user_id into a raw SQL query. This is a textbook SQL injection vector. SQLite3's row_factory would still return full row data for injected union queries extracting all users and passwords."
   },
   {
     "agent": "Database Security Agent",
     "id": "DB-002",
     "severity": "low",
-    "title": "PRAGMA foreign_keys = ON not set in init_db() connection",
-    "file": "app/database.py",
-    "line": 43,
-    "detail": "get_db() correctly enables PRAGMA foreign_keys = ON on every request connection, but init_db() opens its own sqlite3.connect() and never enables foreign keys. SQLite foreign key enforcement is per-connection and defaults to OFF, so ON DELETE CASCADE constraints may silently fail during schema init and seed operations."
+    "title": "SQLite database file present at repository root — may be committed to VCS",
+    "file": "securegate.db",
+    "line": null,
+    "detail": "A securegate.db file exists at the repository root. If tracked by git, it may contain seeded user credentials (usernames, emails, bcrypt hashes). Even bcrypt hashes in version control create an offline cracking opportunity. Verify .gitignore excludes *.db files and run git rm --cached securegate.db."
   },
   {
     "agent": "Secrets & Configuration Agent",
     "id": "SEC-001",
-    "severity": "medium",
-    "title": "python-dotenv missing from requirements.txt",
-    "file": "requirements.txt",
-    "line": null,
-    "detail": "app/auth.py lines 24-26 execute 'from dotenv import load_dotenv; load_dotenv()'. The package python-dotenv is not listed in requirements.txt. A fresh install will fail with ModuleNotFoundError, or silently skip .env loading if python-dotenv happens to be present as a transitive dependency."
+    "severity": "critical",
+    "title": "JWT signing key defaults to empty string when APP_SIGNING_KEY is unset",
+    "file": "app/auth.py",
+    "line": 33,
+    "detail": "Without APP_SIGNING_KEY in the environment the default is an empty string. The RuntimeError guard was added post-hoc ('FIND-001 fix'). Any deployment made before the guard was introduced was vulnerable to JWT forgery. Ensure the guard is present and tested in CI."
   },
   {
     "agent": "Secrets & Configuration Agent",
     "id": "SEC-002",
-    "severity": "low",
-    "title": "BOB_API_KEY not validated at application startup",
+    "severity": "medium",
+    "title": "BOB_API_KEY absence detected lazily at call time, not at startup",
     "file": "app/bob_runner.py",
-    "line": 88,
-    "detail": "BOB_API_KEY is only checked inside run_bob() which is called from background threads. The application starts and returns 202 for gate endpoints before the missing-key error is detected. Operators may believe the service is healthy until the first actual Bob run fails silently."
+    "line": 116,
+    "detail": "run_bob() checks os.environ.get(\"BOB_API_KEY\") only when invoked from a background thread. Missing key produces silent success=False rather than a fail-fast startup error. CI pipelines omitting the key will silently produce misleading results."
   },
   {
     "agent": "Secrets & Configuration Agent",
     "id": "SEC-003",
     "severity": "low",
-    "title": "APP_TOKEN_MINUTES has no upper bound validation",
+    "title": "JWT token lifetime defaults to 120 minutes — longer than OWASP recommendation",
     "file": "app/auth.py",
     "line": 54,
-    "detail": "_TOKEN_MINUTES: int = int(os.environ.get('APP_TOKEN_MINUTES', '30')) accepts any integer. A misconfigured APP_TOKEN_MINUTES=999999999 would issue JWTs that expire decades in the future, effectively making them permanent. No positive-integer or maximum-value guard is applied."
+    "detail": "_TOKEN_MINUTES defaults to 120 (2 hours). OWASP recommends 15–30 minutes for access tokens. A stolen token remains valid for up to 2 hours with no revocation mechanism."
   },
   {
     "agent": "Test Coverage Agent",
     "id": "TEST-001",
     "severity": "medium",
-    "title": "Race condition in test_analyze_populates_both_finding_lists — contradictory assertions",
-    "file": "tests/test_gate.py",
-    "line": 268,
-    "detail": "The test starts a background thread via POST /gate/analyze and immediately polls /gate/status. It then asserts phase == 'analyzing' (thread not done) AND progress == 100 (thread done). These are mutually contradictory; the test is inherently flaky depending on thread scheduling."
+    "title": "No test exercises rate-limit enforcement (HTTP 429) on auth endpoints",
+    "file": "tests/test_auth.py",
+    "line": null,
+    "detail": "The test suite resets _rate_buckets before every test via the _reset_rate_limiter autouse fixture. No test deliberately exhausts the rate limit to verify that a 429 is returned. The rate-limiting logic is therefore untested in the passing test suite."
   },
   {
     "agent": "Test Coverage Agent",
     "id": "TEST-002",
     "severity": "medium",
-    "title": "TestGateTestNoneStdout writes to real on-disk database, not test fixture",
-    "file": "tests/test_bob_runner.py",
-    "line": 248,
-    "detail": "The test calls get_db() directly without the dependency_overrides set by the client fixture. This opens a connection to the real securegate.db and inserts a nulltest_admin user, polluting the developer database and making test results dependent on whether the db file exists."
-  },
-  {
-    "agent": "Test Coverage Agent",
-    "id": "TEST-003",
-    "severity": "medium",
-    "title": "No test verifying require_admin rejects regular users with HTTP 403",
-    "file": "tests/test_users.py",
-    "line": null,
-    "detail": "The require_admin dependency is the primary guard for admin-only routes. No test calls an admin-only endpoint as a regular authenticated user and asserts 403 Forbidden. If require_admin is accidentally removed, no test catches the regression."
-  },
-  {
-    "agent": "Test Coverage Agent",
-    "id": "TEST-004",
-    "severity": "low",
-    "title": "PUT /users/me missing unauthenticated-request test",
-    "file": "tests/test_users.py",
-    "line": 63,
-    "detail": "TestUpdateMyEmail covers authenticated success and duplicate email but never tests that an unauthenticated PUT /users/me returns 401 or 403. If authentication is accidentally removed from the route, no test catches the regression."
-  },
-  {
-    "agent": "Test Coverage Agent",
-    "id": "TEST-005",
-    "severity": "low",
-    "title": "Login test accepts HTTP 404 as valid, masking a missing-router regression",
+    "title": "Over-broad status-code assertions mask auth-enforcement regressions",
     "file": "tests/test_auth.py",
-    "line": 124,
-    "detail": "test_token_grants_access_to_protected_route asserts resp.status_code in (200, 404). A 404 means /users/me does not exist, so the test passes even when the users router is not registered. The stale comment says 404 is acceptable before a sub-task, but that sub-task is complete."
+    "line": 122,
+    "detail": "test_token_grants_access_to_protected_route asserts status_code in (200, 404) — a 404 means the route is missing, not that auth works. test_invalid_token_rejected accepts (401, 403, 404) where a 404 would indicate a routing misconfiguration rather than proper auth rejection. Both assertions should be tightened."
   }
 ]

@@ -18,13 +18,16 @@ class UserRegister(BaseModel):
     @field_validator("password")
     @classmethod
     def password_complexity(cls, v: str) -> str:
-        """FIND-002: enforce at least one uppercase, one lowercase, and one digit."""
+        """FIND-002: enforce at least one uppercase, one lowercase, one digit, and one special character."""
         if not any(c.isupper() for c in v):
             raise ValueError("Password must contain at least one uppercase letter.")
         if not any(c.islower() for c in v):
             raise ValueError("Password must contain at least one lowercase letter.")
         if not any(c.isdigit() for c in v):
             raise ValueError("Password must contain at least one digit.")
+        _SPECIAL = set(r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~""")
+        if not any(c in _SPECIAL for c in v):
+            raise ValueError("Password must contain at least one special character.")
         return v
 
 

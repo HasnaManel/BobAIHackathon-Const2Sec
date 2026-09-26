@@ -19,7 +19,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.bob_runner import BobResult, run_bob
+from app.bob_runner import BobResult, run_bob, register_allowed_prompt
+
+# Register the dummy prompts used throughout these unit tests so that the
+# allowlist guard in run_bob() does not reject them.
+for _p in ("prompt", "my prompt", "test prompt"):
+    register_allowed_prompt(_p)
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +244,7 @@ class TestGateTestNoneStdout:
         import time
         from app.bob_runner import BobResult
         from app import dashboard
+        from app.auth import get_current_user
 
         monkeypatch.setenv("BOB_API_KEY", "test-key")
         none_result = BobResult(success=True, stdout=None, stderr="", returncode=0)
@@ -247,6 +253,7 @@ class TestGateTestNoneStdout:
         try:
             from fastapi.testclient import TestClient
             from app.main import app
+            app.dependency_overrides[get_current_user] = lambda: {"id": 1, "username": "testuser", "is_admin": False}
             with TestClient(app, raise_server_exceptions=True) as c:
                 with patch("app.dashboard.run_bob", return_value=none_result):
                     resp = c.post("/gate/test")
@@ -260,4 +267,5 @@ class TestGateTestNoneStdout:
                     time.sleep(0.05)
                 assert s["verification_status"] == "passed"
         finally:
+            app.dependency_overrides.pop(get_current_user, None)
             dashboard._state.update(original_state)

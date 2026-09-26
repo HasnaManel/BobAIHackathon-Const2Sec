@@ -36,6 +36,19 @@ _DEFAULT_TIMEOUT: Final[int] = 600  # 10 minutes — long-running analysis
 # The repository root is the directory that contains this file's parent (app/).
 REPO_ROOT: Final[Path] = Path(__file__).parent.parent.resolve()
 
+# FIND-001 fix: enforce prompt allowlist inside run_bob() so that any future
+# caller cannot inject arbitrary strings into the Bob CLI invocation.
+_ALLOWED_PROMPTS: set[str] = set()
+
+
+def register_allowed_prompt(prompt: str) -> None:
+    """Register *prompt* as an allowed value for run_bob().
+
+    Must be called during module initialisation (e.g. from dashboard.py) for
+    each hard-coded prompt string before any call to run_bob() is made.
+    """
+    _ALLOWED_PROMPTS.add(prompt)
+
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -76,15 +89,30 @@ def run_bob(prompt: str, *, timeout: int = _DEFAULT_TIMEOUT) -> BobResult:
     """Execute ``bob run "<prompt>"`` and return a structured result.
 
     Args:
-        prompt:   The exact prompt string to send.  Must be one of the four
-                  values defined in _ALLOWED_PROMPTS (enforced by the callers
-                  in dashboard.py — this function itself does not whitelist).
+        prompt:   The exact prompt string to send.  Must be one of the values
+                  registered in _ALLOWED_PROMPTS via register_allowed_prompt().
         timeout:  Maximum wall-clock seconds to wait.  Defaults to 600 s.
+
+    Raises:
+        ValueError  When *prompt* is not in the registered allowlist.
 
     Returns:
         BobResult with success=True and captured output on success.
         BobResult with success=False and a safe error message on failure.
     """
+    # FIND-001 fix: enforce allowlist — only prompts explicitly registered via
+    # register_allowed_prompt() are accepted.  The set is populated by dashboard.py
+    # at import time so it is always non-empty in production.
+    if not _ALLOWED_PROMPTS:
+        raise ValueError(
+            "run_bob() called before any prompts were registered. "
+            "Call register_allowed_prompt() during module initialisation."
+        )
+    if prompt not in _ALLOWED_PROMPTS:
+        raise ValueError(
+            "run_bob() called with an unrecognised prompt. "
+            "Register allowed prompts via register_allowed_prompt()."
+        )
     api_key = os.environ.get("BOB_API_KEY", "").strip()
     if not api_key:
         return BobResult(

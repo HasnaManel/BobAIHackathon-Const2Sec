@@ -118,3 +118,5 @@ build/
 # DO NOT REMOVE ABOVE PATTERNS
 # Add project-specific patterns below
 # ============================================
+# SQLite database file — must not be committed (FIND-003)
+securegate.db

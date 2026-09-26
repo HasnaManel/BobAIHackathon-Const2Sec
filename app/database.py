@@ -10,9 +10,15 @@ variable (default: securegate.db).
 
 import os
 import sqlite3
+from pathlib import Path
 from typing import Generator
 
-DATABASE_PATH: str = os.environ.get("APP_DATABASE_PATH", "securegate.db")
+# FIND-005 fix: resolve the default path relative to the repository root so the
+# correct database file is used regardless of the process's working directory.
+_REPO_ROOT = Path(__file__).parent.parent
+DATABASE_PATH: str = os.environ.get(
+    "APP_DATABASE_PATH", str(_REPO_ROOT / "securegate.db")
+)
 
 # ---------------------------------------------------------------------------
 # Schema

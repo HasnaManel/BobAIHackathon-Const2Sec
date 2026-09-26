@@ -51,7 +51,7 @@ if len(_SIGNING_KEY_RAW) < 32:
     )
 _SIGNING_KEY: str = _SIGNING_KEY_RAW
 _ALGORITHM = "HS256"
-_TOKEN_MINUTES: int = int(os.environ.get("APP_TOKEN_MINUTES", "30"))
+_TOKEN_MINUTES: int = int(os.environ.get("APP_TOKEN_MINUTES", "120"))
 
 # ---------------------------------------------------------------------------
 # Rate limiter — FIND-006 fix

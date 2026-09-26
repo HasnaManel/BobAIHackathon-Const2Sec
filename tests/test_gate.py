@@ -56,14 +56,27 @@ _AUTH_FAILURE = BobResult(success=False, stdout="", stderr="401 Unauthorized", r
 
 @pytest.fixture()
 def gate_client(monkeypatch):
-    """TestClient with a fresh gate state; no real Bob calls."""
+    """TestClient with a fresh gate state; no real Bob calls.
+
+    Overrides get_current_user so /gate/* endpoints (which declare
+    Depends(get_current_user)) are accessible without a real JWT, matching
+    the hackathon-demo intent documented in the test class names.
+    """
     import app.dashboard as dash
+    from app.auth import get_current_user
+
     dash._state = dict(dash._INITIAL_STATE)
     dash._fix_running = False
 
     monkeypatch.setenv("BOB_API_KEY", "mock-key")
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
+
+    # Return a minimal mock user row so the dependency resolves without DB/JWT.
+    app.dependency_overrides[get_current_user] = lambda: {"id": 1, "username": "testuser", "is_admin": False}
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 # ---------------------------------------------------------------------------

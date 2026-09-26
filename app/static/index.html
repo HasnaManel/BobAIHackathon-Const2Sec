@@ -382,9 +382,50 @@
       pointer-events: none;
     }
     #toast.show { opacity: 1; }
+
+    /* ── Login modal ── */
+    #loginOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.7); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    #loginOverlay.show { display: flex; }
+    #loginBox {
+      background: #161b22; border: 1px solid var(--border);
+      border-radius: 10px; padding: 32px 28px; width: 320px;
+    }
+    #loginBox h2 { font-size: 16px; margin-bottom: 20px; color: var(--text); }
+    #loginBox label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    #loginBox input {
+      width: 100%; padding: 8px 10px; margin-bottom: 14px;
+      background: #0d1117; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+    }
+    #loginBox input:focus { outline: none; border-color: var(--accent); }
+    #loginBox .btn { width: 100%; margin-top: 4px; }
+    #loginErr { color: #f85149; font-size: 12px; margin-top: 8px; min-height: 18px; }
+    #authBadge {
+      font-size: 12px; color: var(--muted); cursor: pointer;
+      background: none; border: 1px solid var(--border);
+      border-radius: 4px; padding: 3px 8px; margin-left: 8px;
+    }
+    #authBadge.authed { color: var(--green); border-color: #1a4a1a; }
   </style>
 </head>
 <body>
+
+<!-- Login modal -->
+<div id="loginOverlay">
+  <div id="loginBox">
+    <h2>🔐 Sign in</h2>
+    <label>Username</label>
+    <input id="loginUser" type="text" placeholder="admin" autocomplete="username" />
+    <label>Password</label>
+    <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" />
+    <button class="btn btn-primary" onclick="submitLogin()">Sign in</button>
+    <div id="loginErr"></div>
+  </div>
+</div>
 
 <header>
   <a class="logo" href="/">
@@ -396,6 +437,7 @@
   <span class="badge">Security Gate</span>
   <span class="spacer"></span>
   <span class="project-name" id="projectName">—</span>
+  <button id="authBadge" onclick="showLogin()">Sign in</button>
 </header>
 
 <div class="layout">
@@ -748,9 +790,10 @@
 
     // Button enable states
     const hasFindings = s.security_findings.length > 0;
+    const fixDone     = s.phase === 'done' || s.security_findings.some(f => f.fixed);
     document.getElementById('btnFix').disabled    = !hasFindings;
-    document.getElementById('btnTest').disabled   = !hasFindings;
-    document.getElementById('btnReport').disabled = !hasFindings;
+    document.getElementById('btnTest').disabled   = false;          // always available
+    document.getElementById('btnReport').disabled = !(hasFindings || fixDone);
 
     // Report panel
     if (s.report) renderReport(s.report);
@@ -783,28 +826,109 @@
   function setLoading(btnId, yes) {
     const btn = document.getElementById(btnId);
     if (yes) {
-      btn._orig = btn.innerHTML;
+      btn._orig    = btn.innerHTML;
+      btn._wasDis  = btn.disabled;
       btn.innerHTML = '<span class="spinner"></span> Working…';
       btn.disabled = true;
     } else {
       btn.innerHTML = btn._orig || btn.innerHTML;
-      btn.disabled = false;
+      btn.disabled  = btn._wasDis || false;
     }
   }
 
   // ── API calls ──────────────────────────────────────────────────────────
+  // ── Auth ───────────────────────────────────────────────────────────────
+  let _token = localStorage.getItem('sg_token') || '';
+
+  function showLogin() {
+    document.getElementById('loginOverlay').classList.add('show');
+    document.getElementById('loginErr').textContent = '';
+    document.getElementById('loginUser').focus();
+  }
+
+  function hideLogin() {
+    document.getElementById('loginOverlay').classList.remove('show');
+  }
+
+  function updateAuthBadge() {
+    const btn = document.getElementById('authBadge');
+    if (_token) { btn.textContent = '✓ Signed in'; btn.classList.add('authed'); }
+    else        { btn.textContent = 'Sign in';     btn.classList.remove('authed'); }
+  }
+
+  async function submitLogin() {
+    const u = document.getElementById('loginUser').value.trim();
+    const p = document.getElementById('loginPass').value;
+    document.getElementById('loginErr').textContent = '';
+    try {
+      const r = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p }),
+      });
+      if (!r.ok) { document.getElementById('loginErr').textContent = 'Invalid credentials'; return; }
+      const data = await r.json();
+      _token = data.access_token;
+      localStorage.setItem('sg_token', _token);
+      updateAuthBadge();
+      hideLogin();
+      toast('Signed in ✓');
+      _notifyLoginWaiters();   // unblock any pollUntilDone waiting for re-auth
+      // Refresh dashboard state now that we have a valid token.
+      try { const s = await api('GET', '/gate/status'); applyState(s); } catch(_) {}
+    } catch(e) {
+      document.getElementById('loginErr').textContent = 'Login failed: ' + e.message;
+    }
+  }
+
+  // Allow Enter key to submit
+  document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
+  document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
+  // Click outside box to dismiss
+  document.getElementById('loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOverlay') hideLogin(); });
+
+  // Resolves once the user successfully completes a fresh login.
+  // Uses a one-shot event on submitLogin rather than polling _token,
+  // because _token always holds the old (expired) value until overwritten.
+  let _loginResolvers = [];
+  function waitForLogin() {
+    return new Promise(resolve => _loginResolvers.push(resolve));
+  }
+  function _notifyLoginWaiters() {
+    const resolvers = _loginResolvers.splice(0);
+    for (const r of resolvers) r();
+  }
+
   async function api(method, path) {
-    const r = await fetch(path, { method });
+    const headers = _token ? { Authorization: 'Bearer ' + _token } : {};
+    const r = await fetch(path, { method, headers });
+    if (r.status === 401 || r.status === 403) {
+      _token = '';   // clear stale token so submitLogin knows a fresh one is needed
+      showLogin();
+      throw new Error('__auth__');
+    }
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   }
 
   // Poll GET /gate/status every 3 s until phase leaves the given runningPhase.
-  // Applies each intermediate state so the UI stays live.
+  // If a 401 is received (token expired mid-poll) the login dialog is shown
+  // and polling resumes automatically once the user re-authenticates —
+  // the background Bob operation is never interrupted.
   async function pollUntilDone(runningPhase) {
     while (true) {
       await new Promise(r => setTimeout(r, 3000));
-      const s = await api('GET', '/gate/status');
+      let s;
+      try {
+        s = await api('GET', '/gate/status');
+      } catch(e) {
+        if (e.message === '__auth__') {
+          toast('Session expired — please sign in to resume.');
+          await waitForLogin();
+          continue;   // resume polling with the fresh token
+        }
+        throw e;      // propagate unexpected errors
+      }
       applyState(s);
       if (s.phase === 'error') throw new Error('Bob reported an error. Check server logs.');
       if (s.phase !== runningPhase) return s;
@@ -853,6 +977,8 @@
   }
 
   // ── Boot ───────────────────────────────────────────────────────────────
+  updateAuthBadge();
+  if (!_token) showLogin();
   (async () => {
     try {
       const s = await api('GET', '/gate/status');
