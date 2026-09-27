@@ -196,15 +196,20 @@ def login(request: Request, body: UserLogin, db: Annotated[sqlite3.Connection, D
     _check_rate_limit(request)
 
     # Demo account safety net: ensure it exists before checking credentials.
-    if body.username == "demo":
+     if body.username == "demo":
+        demo_hash = hash_password("Demo_1234")
         existing = db.execute("SELECT id FROM users WHERE username = ?", ("demo",)).fetchone()
         if existing is None:
-            demo_hash = hash_password("Demo_1234")
             db.execute(
                 "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
                 ("demo", "demo@demo.com", demo_hash),
             )
-            db.commit()
+        else:
+            db.execute(
+                "UPDATE users SET hashed_password = ? WHERE username = ?",
+                (demo_hash, "demo"),
+            )
+        db.commit()
 
     row = db.execute(
         "SELECT id, username, hashed_password, is_admin FROM users WHERE username = ?",
