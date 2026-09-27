@@ -55,13 +55,11 @@ def init_db(db_path: str = DATABASE_PATH) -> None:
         conn.close()
         
 def seed_demo_user(db_path: str = DATABASE_PATH) -> None:
-    """Create a default demo user if the users table is empty.
-    Ensures a known login (demo/demo123) works after every cold start,
-    since /tmp is wiped between Vercel function instances."""
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute("SELECT COUNT(*) FROM users")
         count = cur.fetchone()[0]
+        print(f"[seed] user count before seeding: {count}")
         if count == 0:
             hashed = bcrypt.hashpw(b"demo123", bcrypt.gensalt()).decode()
             conn.execute(
@@ -69,8 +67,13 @@ def seed_demo_user(db_path: str = DATABASE_PATH) -> None:
                 ("demo", "demo@demo.com", hashed),
             )
             conn.commit()
+            print("[seed] demo user created successfully")
+        else:
+            print("[seed] skipped — users already exist")
+    except Exception as e:
+        print(f"[seed] ERROR: {e}")
     finally:
-        conn.close()      
+        conn.close()
         
         
 
