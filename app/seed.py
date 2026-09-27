@@ -17,12 +17,14 @@ IMPORTANT — DEMO ONLY:
 """
 
 import secrets
+
 import sqlite3
 
 from app.database import DATABASE_PATH, init_db
 
 _ADMIN_USERNAME = "admin"
 _ADMIN_EMAIL = "admin@securegate.local"
+_ADMIN_PASSWORD = "admin"  # NOTE: static/weak on purpose, local demo only.
 
 
 def _hash_password(plain: str) -> str:
@@ -34,7 +36,7 @@ def _hash_password(plain: str) -> str:
 def seed_admin(db_path: str = DATABASE_PATH) -> None:
     init_db(db_path)
 
-    plain_password = secrets.token_urlsafe(16)
+    plain_password = _ADMIN_PASSWORD
     hashed = _hash_password(plain_password)
 
     conn = sqlite3.connect(db_path)
