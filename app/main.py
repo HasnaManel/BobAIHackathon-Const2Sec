@@ -6,6 +6,7 @@ Environment variables (see env.example):
   APP_TOKEN_MINUTES    JWT lifetime in minutes (default: 30).
 """
 
+from app.database import init_db, seed_demo_user
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,6 +23,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(application: FastAPI):
     """Create database tables on startup."""
     init_db()
+    seed_demo_user()  
     yield
 
 

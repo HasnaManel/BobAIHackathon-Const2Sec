@@ -12,6 +12,7 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Generator
+import bcrypt
 
 # FIND-005 fix: resolve the default path relative to the repository root so the
 # correct database file is used regardless of the process's working directory.
@@ -52,6 +53,26 @@ def init_db(db_path: str = DATABASE_PATH) -> None:
         conn.commit()
     finally:
         conn.close()
+        
+def seed_demo_user(db_path: str = DATABASE_PATH) -> None:
+    """Create a default demo user if the users table is empty.
+    Ensures a known login (demo/demo123) works after every cold start,
+    since /tmp is wiped between Vercel function instances."""
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute("SELECT COUNT(*) FROM users")
+        count = cur.fetchone()[0]
+        if count == 0:
+            hashed = bcrypt.hashpw(b"demo123", bcrypt.gensalt()).decode()
+            conn.execute(
+                "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
+                ("demo", "demo@demo.com", hashed),
+            )
+            conn.commit()
+    finally:
+        conn.close()      
+        
+        
 
 
 def get_db() -> Generator[sqlite3.Connection, None, None]:
