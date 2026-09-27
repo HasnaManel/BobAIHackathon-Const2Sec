@@ -61,7 +61,7 @@ def seed_demo_user(db_path: str = DATABASE_PATH) -> None:
         count = cur.fetchone()[0]
         print(f"[seed] user count before seeding: {count}")
         if count == 0:
-            hashed = bcrypt.hashpw(b"demo123", bcrypt.gensalt()).decode()
+            hashed = bcrypt.hashpw(b"Demo_1234", bcrypt.gensalt()).decode()
             conn.execute(
                 "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
                 ("demo", "demo@demo.com", hashed),
